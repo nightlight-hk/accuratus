@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "id": "accuratus",
+  "version": "${version}",
+  "name": "accuratus",
+  "description": "",
+  "authors": [],
+  "contact": {},
+  "license": "MIT",
+  "icon": "assets/accuratus/icon.png",
+  "environment": "client",
+  "entrypoints": {
+    "fabric-datagen": [
+      "org.nightcat.accuratus.client.AccuratusDataGenerator"
+    ],
+    "client": [
+      "org.nightcat.accuratus.client.AccuratusClient"
+    ],
+    "main": [
+      "org.nightcat.accuratus.Accuratus"
+    ]
+  },
+  "mixins": [
+    "accuratus.mixins.json",
+    {
+      "config": "accuratus.client.mixins.json",
+      "environment": "client"
+    }
+  ],
+  "depends": {
+    "fabricloader": ">=${loader_version}",
+    "fabric-api": "*",
+    "minecraft": "${minecraft_version}"
+  }
+}
