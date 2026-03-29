@@ -13,7 +13,7 @@ public class TrajectoryCalculator {
     // vertical acceleration: -0.05 blocks/tick^2
     private static final double GRAVITY = -0.05;
     // pitch with largest range
-    private static final double PITCH_MAX_RANGE = -38.5;
+    private static final double PITCH_MAX_RANGE = -90;
     // about 1.8675
     private static final double VY_MAX = SPEED * Math.sin(Math.toRadians(-PITCH_MAX_RANGE));
 
