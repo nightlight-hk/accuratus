@@ -2,8 +2,10 @@ package org.nightcat.accuratus.mixin.client;
 
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
+import net.minecraft.client.option.GameOptions;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.projectile.ProjectileUtil;
+import net.minecraft.util.Formatting;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.EntityHitResult;
 import net.minecraft.util.hit.HitResult;
@@ -16,6 +18,7 @@ import net.minecraft.item.Items;
 import net.minecraft.text.Text;
 import org.nightcat.accuratus.client.AccuratusClient;
 import org.nightcat.accuratus.client.PreciseTrajectoryCalculator;
+import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
@@ -30,14 +33,26 @@ public abstract class MinecraftClientMixin {
     @Shadow
     public ClientPlayerEntity player;
 
+    @Final
+    @Shadow
+    public GameOptions options;
+
     @Unique
-    private int lastAutoAimTick = Integer.MIN_VALUE;
+    private boolean handledCurrentAttackClick;
+
+    @Unique
+    @Inject(method = "tick", at = @At("HEAD"))
+    private void resetAutoAimClickLatch(CallbackInfo ci) {
+        if (!options.attackKey.isPressed()) {
+            handledCurrentAttackClick = false;
+        }
+    }
 
     @Unique
     @Inject(method = "doAttack", at = @At("HEAD"), cancellable = true)
     private void cancelAttackInFixedTargetMode(CallbackInfoReturnable<Boolean> cir) {
         if (shouldHandleFixedTargetAimingActions()) {
-            tryAutoAimAtCurrentLookTarget();
+            tryAutoAimAtCurrentClick();
 
             // Reserved for custom fixed-target behavior after aiming is applied.
             cir.setReturnValue(false);
@@ -49,7 +64,7 @@ public abstract class MinecraftClientMixin {
     private void cancelBlockBreakingInFixedTargetMode(boolean breaking, CallbackInfo ci) {
         if (shouldHandleFixedTargetAimingActions()) {
             if (breaking) {
-                tryAutoAimAtCurrentLookTarget();
+                tryAutoAimAtCurrentClick();
             }
 
             // Reserved for custom fixed-target behavior after aiming is applied.
@@ -79,6 +94,9 @@ public abstract class MinecraftClientMixin {
             return;
         }
 
+        String targetName = getTargetName(target);
+        String coordinateText = formatCoordinates(targetPos);
+
         double startY = player.getY() + (player.isSneaking() ? 1.17 : 1.52);
         double speed = getInitialArrowSpeed(player);
         double[] result = PreciseTrajectoryCalculator.calculate(
@@ -92,7 +110,9 @@ public abstract class MinecraftClientMixin {
         );
 
         if (result[2] < 0) {
-            player.sendMessage(Text.literal("Fixed target: impossible to hit this target."), false);
+            player.sendMessage(Text.literal(
+                    "Fixed target: impossible to hit " + targetName + " at " + coordinateText + "."
+            ).formatted(Formatting.RED), false);
             return;
         }
 
@@ -106,18 +126,20 @@ public abstract class MinecraftClientMixin {
         double ticks = result[2];
         double seconds = ticks / 20.0;
         player.sendMessage(Text.literal(String.format(
-                "Fixed target: ETA %.2f ticks (%.2f s).",
+                "Fixed target: %s at %s, ETA %.2f ticks (%.2f s).",
+                targetName,
+                coordinateText,
                 ticks,
                 seconds
         )), false);
     }
 
     @Unique
-    private void tryAutoAimAtCurrentLookTarget() {
-        if (player.age == lastAutoAimTick) {
+    private void tryAutoAimAtCurrentClick() {
+        if (handledCurrentAttackClick) {
             return;
         }
-        lastAutoAimTick = player.age;
+        handledCurrentAttackClick = true;
 
         HitResult target = findLongRangeLookTarget();
         if (target.getType() == Type.MISS) {
@@ -169,11 +191,27 @@ public abstract class MinecraftClientMixin {
         if (target instanceof BlockHitResult blockHit) {
             return blockHit.getPos();
         }
-        if (target.getType() == HitResult.Type.ENTITY) {
-            Entity entity = ((EntityHitResult) target).getEntity();
-            return entity.getBoundingBox().getCenter();
+        if (target instanceof EntityHitResult entityHit) {
+            return entityHit.getPos();
         }
         return null;
+    }
+
+    @Unique
+    private String getTargetName(HitResult target) {
+        if (target instanceof BlockHitResult blockHit) {
+            return player.getEntityWorld().getBlockState(blockHit.getBlockPos()).getBlock().getName().getString();
+        }
+        if (target instanceof EntityHitResult entityHit) {
+            Entity entity = entityHit.getEntity();
+            return entity.getName().getString();
+        }
+        return "target";
+    }
+
+    @Unique
+    private static String formatCoordinates(Vec3d pos) {
+        return String.format("(%.2f, %.2f, %.2f)", pos.x, pos.y, pos.z);
     }
 
     @Unique
