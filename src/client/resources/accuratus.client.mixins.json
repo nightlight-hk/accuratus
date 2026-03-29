@@ -4,6 +4,7 @@
   "package": "org.nightcat.accuratus.mixin.client",
   "compatibilityLevel": "JAVA_21",
   "client": [
+    "MinecraftClientMixin"
   ],
   "injectors": {
     "defaultRequire": 1
