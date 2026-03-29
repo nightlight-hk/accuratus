@@ -9,22 +9,40 @@ import static net.fabricmc.fabric.api.client.command.v2.ClientCommandManager.lit
 public class AccuratusClient implements ClientModInitializer {
 
     private static boolean fixedTargetEnabled;
+    private static boolean trackTargetEnabled;
 
     @Override
     public void onInitializeClient() {
-        ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> dispatcher.register(
-                literal("fixedtarget")
-                        .executes(context -> {
-                            fixedTargetEnabled = !fixedTargetEnabled;
-                            context.getSource().sendFeedback(Text.literal(
-                                    "Fixed target aiming mode " + (fixedTargetEnabled ? "enabled" : "disabled") + "."
-                            ));
-                            return 1;
-                        })
-        ));
+        ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {
+            dispatcher.register(
+                    literal("fixedtarget")
+                            .executes(context -> {
+                                fixedTargetEnabled = !fixedTargetEnabled;
+                                context.getSource().sendFeedback(Text.literal(
+                                        "Fixed target aiming mode " + (fixedTargetEnabled ? "enabled" : "disabled") + "."
+                                ));
+                                return 1;
+                            })
+            );
+
+            dispatcher.register(
+                    literal("tracktarget")
+                            .executes(context -> {
+                                trackTargetEnabled = !trackTargetEnabled;
+                                context.getSource().sendFeedback(Text.literal(
+                                        "Prediction tracking mode " + (trackTargetEnabled ? "enabled" : "disabled") + "."
+                                ));
+                                return 1;
+                            })
+            );
+        });
     }
 
     public static boolean isFixedTargetEnabled() {
         return fixedTargetEnabled;
+    }
+
+    public static boolean isTrackTargetEnabled() {
+        return trackTargetEnabled;
     }
 }

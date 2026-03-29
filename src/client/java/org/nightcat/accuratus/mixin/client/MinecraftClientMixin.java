@@ -17,6 +17,7 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.text.Text;
 import org.nightcat.accuratus.client.AccuratusClient;
+import org.nightcat.accuratus.client.InterceptAimCalculator;
 import org.nightcat.accuratus.client.PreciseTrajectoryCalculator;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
@@ -30,6 +31,12 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 @Mixin(MinecraftClient.class)
 public abstract class MinecraftClientMixin {
 
+    @Unique
+    private static final int TRACK_HISTORY_SIZE = 20;
+
+    @Unique
+    private static final double TRACKING_RANGE = 256.0;
+
     @Shadow
     public ClientPlayerEntity player;
 
@@ -41,16 +48,50 @@ public abstract class MinecraftClientMixin {
     private boolean handledCurrentAttackClick;
 
     @Unique
+    private boolean trackingActive;
+
+    @Unique
+    private int trackedEntityId = Integer.MIN_VALUE;
+
+    @Unique
+    private final double[] trackedX = new double[TRACK_HISTORY_SIZE];
+
+    @Unique
+    private final double[] trackedY = new double[TRACK_HISTORY_SIZE];
+
+    @Unique
+    private final double[] trackedZ = new double[TRACK_HISTORY_SIZE];
+
+    @Unique
+    private int trackedSampleCount;
+
+    @Unique
+    private boolean trackingReadyNotified;
+
+    @Unique
     @Inject(method = "tick", at = @At("HEAD"))
     private void resetAutoAimClickLatch(CallbackInfo ci) {
+        if (player == null) {
+            handledCurrentAttackClick = false;
+            return;
+        }
+
         if (!options.attackKey.isPressed()) {
             handledCurrentAttackClick = false;
         }
+
+        updateTrackingState();
     }
 
     @Unique
     @Inject(method = "doAttack", at = @At("HEAD"), cancellable = true)
     private void cancelAttackInFixedTargetMode(CallbackInfoReturnable<Boolean> cir) {
+        if (shouldHandlePredictionModeActions()) {
+            handlePredictionClick();
+            cir.setReturnValue(false);
+            return;
+        }
+
         if (shouldHandleFixedTargetAimingActions()) {
             tryAutoAimAtCurrentClick();
 
@@ -62,6 +103,11 @@ public abstract class MinecraftClientMixin {
     @Unique
     @Inject(method = "handleBlockBreaking", at = @At("HEAD"), cancellable = true)
     private void cancelBlockBreakingInFixedTargetMode(boolean breaking, CallbackInfo ci) {
+        if (shouldHandlePredictionModeActions()) {
+            ci.cancel();
+            return;
+        }
+
         if (shouldHandleFixedTargetAimingActions()) {
             if (breaking) {
                 tryAutoAimAtCurrentClick();
@@ -70,6 +116,11 @@ public abstract class MinecraftClientMixin {
             // Reserved for custom fixed-target behavior after aiming is applied.
             ci.cancel();
         }
+    }
+
+    @Unique
+    private boolean shouldHandlePredictionModeActions() {
+        return AccuratusClient.isTrackTargetEnabled() && player != null && isHoldingBowOrCrossbow(player);
     }
 
     @Unique
@@ -222,6 +273,139 @@ public abstract class MinecraftClientMixin {
             return 3.15;
         }
         return 3.0;
+    }
+
+    @Unique
+    private void handlePredictionClick() {
+        if (handledCurrentAttackClick) {
+            return;
+        }
+        handledCurrentAttackClick = true;
+
+        if (trackingActive) {
+            stopTracking("Track target: tracking stopped.");
+            return;
+        }
+
+        HitResult target = findLongRangeLookTarget();
+        if (target instanceof EntityHitResult entityHit) {
+            startTracking(entityHit.getEntity());
+            return;
+        }
+
+        player.sendMessage(Text.literal("Track target: left click an entity to start tracking."), false);
+    }
+
+    @Unique
+    private void startTracking(Entity entity) {
+        trackingActive = true;
+        trackedEntityId = entity.getId();
+        trackedSampleCount = 0;
+        trackingReadyNotified = false;
+
+        Vec3d pos = getEntityHeadPosition(entity);
+        player.sendMessage(Text.literal(String.format(
+                "Track target: tracking %s at %s.",
+                entity.getName().getString(),
+                formatCoordinates(pos)
+        )), false);
+    }
+
+    @Unique
+    private void updateTrackingState() {
+        if (!trackingActive) {
+            return;
+        }
+
+        if (player == null) {
+            trackingActive = false;
+            return;
+        }
+
+        if (!AccuratusClient.isTrackTargetEnabled()) {
+            stopTracking("Track target: prediction mode disabled.");
+            return;
+        }
+
+        Entity trackedEntity = player.getEntityWorld().getEntityById(trackedEntityId);
+        if (trackedEntity == null || !trackedEntity.isAlive()) {
+            stopTracking("Track target: target is gone.");
+            return;
+        }
+
+        if (player.squaredDistanceTo(trackedEntity) > TRACKING_RANGE * TRACKING_RANGE) {
+            stopTracking("Track target: target out of range.");
+            return;
+        }
+
+        Vec3d headPos = getEntityHeadPosition(trackedEntity);
+        appendTrackingSample(headPos.x, headPos.y, headPos.z);
+
+        if (trackedSampleCount < TRACK_HISTORY_SIZE) {
+            return;
+        }
+
+        if (!trackingReadyNotified) {
+            trackingReadyNotified = true;
+            player.sendMessage(Text.literal("Track target: 20 ticks collected, predicting trajectory."), false);
+        }
+
+        double startY = player.getY() + (player.isSneaking() ? 1.17 : 1.52);
+        InterceptAimCalculator.AimSolution solution = InterceptAimCalculator.findEarliestAimSolution(
+                trackedX,
+                trackedY,
+                trackedZ,
+                player.getX(),
+                startY,
+                player.getZ(),
+                getInitialArrowSpeed(player)
+        );
+
+        if (solution.found) {
+            applyAim((float) solution.yaw, (float) solution.pitch);
+        }
+    }
+
+    @Unique
+    private void appendTrackingSample(double x, double y, double z) {
+        if (trackedSampleCount < TRACK_HISTORY_SIZE) {
+            trackedX[trackedSampleCount] = x;
+            trackedY[trackedSampleCount] = y;
+            trackedZ[trackedSampleCount] = z;
+            trackedSampleCount++;
+            return;
+        }
+
+        System.arraycopy(trackedX, 1, trackedX, 0, TRACK_HISTORY_SIZE - 1);
+        System.arraycopy(trackedY, 1, trackedY, 0, TRACK_HISTORY_SIZE - 1);
+        System.arraycopy(trackedZ, 1, trackedZ, 0, TRACK_HISTORY_SIZE - 1);
+        trackedX[TRACK_HISTORY_SIZE - 1] = x;
+        trackedY[TRACK_HISTORY_SIZE - 1] = y;
+        trackedZ[TRACK_HISTORY_SIZE - 1] = z;
+    }
+
+    @Unique
+    private void applyAim(float yaw, float pitch) {
+        player.setYaw(yaw);
+        player.setPitch(pitch);
+        player.setHeadYaw(yaw);
+        player.setBodyYaw(yaw);
+    }
+
+    @Unique
+    private static Vec3d getEntityHeadPosition(Entity entity) {
+        return new Vec3d(entity.getX(), entity.getEyeY(), entity.getZ());
+    }
+
+    @Unique
+    private void stopTracking(String reason) {
+        trackingActive = false;
+        trackedEntityId = Integer.MIN_VALUE;
+        trackedSampleCount = 0;
+        trackingReadyNotified = false;
+        if (player != null) {
+            player.sendMessage(Text.literal(reason), false);
+        }
     }
 }
 
