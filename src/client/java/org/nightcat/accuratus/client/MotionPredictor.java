@@ -73,7 +73,7 @@ public class MotionPredictor {
 
 
     private static double[] predict(SuffixStats best, double[] x, double[] v, double[] a) {
-        double[] result = new double[20];
+        double[] result = new double[30];
         if (best == null) {
             double avg = mean(x);
             for (int i = 0; i < 20; i++) result[i] = avg;
@@ -84,13 +84,13 @@ public class MotionPredictor {
             case 0:
                 // position suffix: stable
                 double constVal = best.mean;
-                for (int i = 0; i < 20; i++) result[i] = constVal;
+                for (int i = 0; i < 30; i++) result[i] = constVal;
                 break;
             case 1:
                 // speed suffix: stable speed
                 double avgV = best.mean;
                 double lastX = x[19];
-                for (int i = 0; i < 20; i++) {
+                for (int i = 0; i < 30; i++) {
                     result[i] = lastX + (i + 1) * avgV;
                 }
                 break;
@@ -100,7 +100,7 @@ public class MotionPredictor {
                 double lastAvgV = x[19] - x[18];
                 double v0 = lastAvgV + avgA / 2.0;
                 double x0 = x[19];
-                for (int i = 0; i < 20; i++) {
+                for (int i = 0; i < 30; i++) {
                     double dt = i + 1;
                     result[i] = x0 + v0 * dt + 0.5 * avgA * dt * dt;
                 }
@@ -145,7 +145,7 @@ public class MotionPredictor {
         long end = System.currentTimeMillis();
         System.out.println("Time taken: " + (end - start) + " ms");
 
-        for (int i = 0; i < 20; i++) {
+        for (int i = 0; i < 30; i++) {
             System.out.printf("t=%2d : %10.4f\n", 20 + i, predictions[i]);
         }
         scanner.close();
