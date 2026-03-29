@@ -6,24 +6,21 @@ import java.util.ArrayList;
 
 public class TrajectoryCalculator {
 
-    // Initial speed in block per tick
-    private static final double SPEED = 3.0;
     // velocity multiplier per tick
     private static final double DRAG = 0.99;
     // vertical acceleration: -0.05 blocks/tick^2
     private static final double GRAVITY = -0.05;
     // pitch with largest range
     private static final double PITCH_MAX_RANGE = -90;
-    // about 1.8675
-    private static final double VY_MAX = SPEED * Math.sin(Math.toRadians(-PITCH_MAX_RANGE));
-
 
     // Returns the initial pitch and yaw (Minecraft conventions) and the flight time
     // that bring the arrow as close as possible to the target, respecting
     // pitch > -38.5°.
 
     public static double[] findAnglesAndTicks(double startX, double startY, double startZ,
-                                              double targetX, double targetY, double targetZ) {
+                                              double targetX, double targetY, double targetZ, double SPEED) {
+        final double VY_MAX = SPEED * Math.sin(Math.toRadians(-PITCH_MAX_RANGE));
+
         int maxT = 2000;
         double[] pow99 = new double[maxT + 1];
         pow99[0] = 1.0;
@@ -118,7 +115,7 @@ public class TrajectoryCalculator {
         double ty = sysin.nextDouble();
         double tz = sysin.nextDouble();
         long start = System.currentTimeMillis();
-        double[] ans = findAnglesAndTicks(px, py, pz, tx, ty, tz);
+        double[] ans = findAnglesAndTicks(px, py, pz, tx, ty, tz, 3.0);
         long end = System.currentTimeMillis();
         System.out.println("Time taken: " + (end - start) + " ms");
         System.out.println("Yaw angle, Pitch angle, Expected Tick");
