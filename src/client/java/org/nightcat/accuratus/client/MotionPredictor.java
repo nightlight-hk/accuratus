@@ -4,7 +4,7 @@ import java.util.Scanner;
 
 public class MotionPredictor {
 
-    public static double[] predictNext20(double[] x) {
+    public static double[] predictNext30(double[] x) {
         if (x == null || x.length != 20) {
             throw new IllegalArgumentException("Array length must be 20");
         }
@@ -141,7 +141,7 @@ public class MotionPredictor {
         }
 
         long start = System.currentTimeMillis();
-        double[] predictions = predictNext20(positions);
+        double[] predictions = predictNext30(positions);
         long end = System.currentTimeMillis();
         System.out.println("Time taken: " + (end - start) + " ms");
 
