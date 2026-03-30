@@ -35,6 +35,9 @@ public abstract class MinecraftClientMixin {
     private static final int TRACK_HISTORY_SIZE = 20;
 
     @Unique
+    private static final int TRACK_PREDICTION_STEP_TICKS = 1;
+
+    @Unique
     private static final double TRACKING_RANGE = 256.0;
 
     @Shadow
@@ -63,10 +66,37 @@ public abstract class MinecraftClientMixin {
     private final double[] trackedZ = new double[TRACK_HISTORY_SIZE];
 
     @Unique
+    private final double[] orderedTrackedX = new double[TRACK_HISTORY_SIZE];
+
+    @Unique
+    private final double[] orderedTrackedY = new double[TRACK_HISTORY_SIZE];
+
+    @Unique
+    private final double[] orderedTrackedZ = new double[TRACK_HISTORY_SIZE];
+
+    @Unique
     private int trackedSampleCount;
 
     @Unique
+    private int trackedWriteIndex;
+
+    @Unique
     private boolean trackingReadyNotified;
+
+    @Unique
+    private int predictionTickCounter;
+
+    @Unique
+    private boolean delayedAimPending;
+
+    @Unique
+    private int delayedAimTicksRemaining;
+
+    @Unique
+    private float delayedAimYaw;
+
+    @Unique
+    private float delayedAimPitch;
 
     @Unique
     @Inject(method = "tick", at = @At("HEAD"))
@@ -301,7 +331,11 @@ public abstract class MinecraftClientMixin {
         trackingActive = true;
         trackedEntityId = entity.getId();
         trackedSampleCount = 0;
+        trackedWriteIndex = 0;
         trackingReadyNotified = false;
+        predictionTickCounter = 0;
+        delayedAimPending = false;
+        delayedAimTicksRemaining = 0;
 
         Vec3d pos = getEntityHeadPosition(entity);
         player.sendMessage(Text.literal(String.format(
@@ -350,11 +384,17 @@ public abstract class MinecraftClientMixin {
             player.sendMessage(Text.literal("Track target: 20 ticks collected, predicting trajectory."), false);
         }
 
+        predictionTickCounter++;
+        if (predictionTickCounter < TRACK_PREDICTION_STEP_TICKS) {
+            return;
+        }
+        predictionTickCounter = 0;
+
         double startY = player.getY() + (player.isSneaking() ? 1.17 : 1.52);
         InterceptAimCalculator.AimSolution solution = InterceptAimCalculator.findEarliestAimSolution(
-                trackedX,
-                trackedY,
-                trackedZ,
+                orderedTrackedX,
+                orderedTrackedY,
+                orderedTrackedZ,
                 player.getX(),
                 startY,
                 player.getZ(),
@@ -369,19 +409,37 @@ public abstract class MinecraftClientMixin {
     @Unique
     private void appendTrackingSample(double x, double y, double z) {
         if (trackedSampleCount < TRACK_HISTORY_SIZE) {
-            trackedX[trackedSampleCount] = x;
-            trackedY[trackedSampleCount] = y;
-            trackedZ[trackedSampleCount] = z;
+            trackedX[trackedWriteIndex] = x;
+            trackedY[trackedWriteIndex] = y;
+            trackedZ[trackedWriteIndex] = z;
+            trackedWriteIndex = (trackedWriteIndex + 1) % TRACK_HISTORY_SIZE;
             trackedSampleCount++;
+            if (trackedSampleCount == TRACK_HISTORY_SIZE) {
+                rebuildOrderedHistory();
+            }
             return;
         }
 
-        System.arraycopy(trackedX, 1, trackedX, 0, TRACK_HISTORY_SIZE - 1);
-        System.arraycopy(trackedY, 1, trackedY, 0, TRACK_HISTORY_SIZE - 1);
-        System.arraycopy(trackedZ, 1, trackedZ, 0, TRACK_HISTORY_SIZE - 1);
-        trackedX[TRACK_HISTORY_SIZE - 1] = x;
-        trackedY[TRACK_HISTORY_SIZE - 1] = y;
-        trackedZ[TRACK_HISTORY_SIZE - 1] = z;
+        trackedX[trackedWriteIndex] = x;
+        trackedY[trackedWriteIndex] = y;
+        trackedZ[trackedWriteIndex] = z;
+        trackedWriteIndex = (trackedWriteIndex + 1) % TRACK_HISTORY_SIZE;
+
+        rebuildOrderedHistory();
+    }
+
+    @Unique
+    private void rebuildOrderedHistory() {
+        if (trackedSampleCount < TRACK_HISTORY_SIZE) {
+            return;
+        }
+
+        for (int i = 0; i < TRACK_HISTORY_SIZE; i++) {
+            int src = (trackedWriteIndex + i) % TRACK_HISTORY_SIZE;
+            orderedTrackedX[i] = trackedX[src];
+            orderedTrackedY[i] = trackedY[src];
+            orderedTrackedZ[i] = trackedZ[src];
+        }
     }
 
     @Unique
@@ -402,7 +460,11 @@ public abstract class MinecraftClientMixin {
         trackingActive = false;
         trackedEntityId = Integer.MIN_VALUE;
         trackedSampleCount = 0;
+        trackedWriteIndex = 0;
         trackingReadyNotified = false;
+        predictionTickCounter = 0;
+        delayedAimPending = false;
+        delayedAimTicksRemaining = 0;
         if (player != null) {
             player.sendMessage(Text.literal(reason), false);
         }

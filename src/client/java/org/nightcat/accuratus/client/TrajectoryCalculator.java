@@ -1,17 +1,25 @@
 package org.nightcat.accuratus.client;
 
-import java.util.Scanner;
 import java.util.Arrays;
-import java.util.ArrayList;
+import java.util.Scanner;
 
 public class TrajectoryCalculator {
 
     // velocity multiplier per tick
     private static final double DRAG = 0.99;
-    // vertical acceleration: -0.05 blocks/tick^2
-    private static final double GRAVITY = -0.05;
     // pitch with largest range
     private static final double PITCH_MAX_RANGE = -90;
+
+    private static final int MAX_TICKS = 2000;
+
+    private static final double[] POW99 = new double[MAX_TICKS + 1];
+
+    static {
+        POW99[0] = 1.0;
+        for (int i = 1; i <= MAX_TICKS; i++) {
+            POW99[i] = POW99[i - 1] * DRAG;
+        }
+    }
 
     // Returns the initial pitch and yaw (Minecraft conventions) and the flight time
     // that bring the arrow as close as possible to the target, respecting
@@ -19,27 +27,32 @@ public class TrajectoryCalculator {
 
     public static double[] findAnglesAndTicks(double startX, double startY, double startZ,
                                               double targetX, double targetY, double targetZ, double SPEED) {
+        return findAnglesAndTicksWithin(startX, startY, startZ, targetX, targetY, targetZ, SPEED, 1, MAX_TICKS);
+    }
+
+    public static double[] findAnglesAndTicksWithin(double startX, double startY, double startZ,
+                                                    double targetX, double targetY, double targetZ, double SPEED,
+                                                    int minTick, int maxTick) {
         final double VY_MAX = SPEED * Math.sin(Math.toRadians(-PITCH_MAX_RANGE));
 
-        int maxT = 2000;
-        double[] pow99 = new double[maxT + 1];
-        pow99[0] = 1.0;
-        for (int i = 1; i <= maxT; i++) {
-            pow99[i] = pow99[i - 1] * DRAG;
+        int startTick = Math.max(1, minTick);
+        int endTick = Math.min(MAX_TICKS, maxTick);
+        if (startTick > endTick) {
+            return new double[]{0.0, 0.0, -1};
         }
 
         double bestDist = Double.POSITIVE_INFINITY;
         double bestVx = 0, bestVy = 0, bestVz = 0;
         int bestT = -1;
 
-        for (int t = 1; t <= maxT; t++) {
+        for (int t = startTick; t <= endTick; t++) {
             // factor = 100 * (1 - 0.99^t)
-            double factor = 100.0 * (1.0 - pow99[t]);
+            double factor = 100.0 * (1.0 - POW99[t]);
 
             // Target vector after accounting for gravity and drag
             double bX = targetX - startX;
             double bZ = targetZ - startZ;
-            double bY = targetY - startY + 5.0 * t - 500.0 * (1.0 - pow99[t]);
+            double bY = targetY - startY + 5.0 * t - 500.0 * (1.0 - POW99[t]);
 
             // Unconstrained optimal velocity (would hit target exactly)
             double vx_opt = bX / factor;
@@ -100,6 +113,9 @@ public class TrajectoryCalculator {
         }
 
         // Convert to Minecraft angles
+        if (bestT < 0) {
+            return new double[]{0.0, 0.0, -1};
+        }
         double pitch = -Math.toDegrees(Math.asin(bestVy / SPEED));
         double yaw = -Math.toDegrees(Math.atan2(bestVx, bestVz));
         return new double[]{yaw, pitch, bestT};

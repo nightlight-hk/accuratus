@@ -79,6 +79,76 @@ public final class InterceptAimCalculator {
         return AimSolution.noHit(elapsedMs);
     }
 
+    public static AimSolution findAimSolutionAtFutureTick(
+            double[] pastX,
+            double[] pastY,
+            double[] pastZ,
+            double startX,
+            double startY,
+            double startZ,
+            double arrowSpeed,
+            int futureTick
+    ) {
+        validateHistory(pastX, "pastX");
+        validateHistory(pastY, "pastY");
+        validateHistory(pastZ, "pastZ");
+        if (arrowSpeed <= 0.0) {
+            throw new IllegalArgumentException("arrowSpeed must be > 0");
+        }
+        if (futureTick < 1 || futureTick > PREDICTION_TICKS) {
+            throw new IllegalArgumentException("futureTick must be in [1, " + PREDICTION_TICKS + "]");
+        }
+
+        long beginNs = System.nanoTime();
+
+        double[] predictedX = MotionPredictor.predictNext30(pastX);
+        double[] predictedY = MotionPredictor.predictNext30(pastY);
+        double[] predictedZ = MotionPredictor.predictNext30(pastZ);
+
+        double elapsedMs = (System.nanoTime() - beginNs) / 1_000_000.0;
+        if (elapsedMs > MAX_BUDGET_MS) {
+            return AimSolution.timeout(elapsedMs);
+        }
+
+        int idx = futureTick - 1;
+        double tx = predictedX[idx];
+        double ty = predictedY[idx];
+        double tz = predictedZ[idx];
+
+        double[] yawPitchTick = TrajectoryCalculator.findAnglesAndTicksWithin(
+                startX,
+                startY,
+                startZ,
+                tx,
+                ty,
+                tz,
+                arrowSpeed,
+                Math.max(1, futureTick - TICK_TOLERANCE),
+                futureTick + TICK_TOLERANCE
+        );
+
+        int shotTick = (int) Math.round(yawPitchTick[2]);
+        elapsedMs = (System.nanoTime() - beginNs) / 1_000_000.0;
+        if (elapsedMs > MAX_BUDGET_MS) {
+            return AimSolution.timeout(elapsedMs);
+        }
+
+        if (shotTick <= 0 || Math.abs(shotTick - futureTick) > TICK_TOLERANCE) {
+            return AimSolution.noHit(elapsedMs);
+        }
+
+        return AimSolution.hit(
+                yawPitchTick[0],
+                yawPitchTick[1],
+                tx,
+                ty,
+                tz,
+                futureTick,
+                shotTick,
+                elapsedMs
+        );
+    }
+
     private static void validateHistory(double[] history, String name) {
         if (history == null || history.length != HISTORY_TICKS) {
             throw new IllegalArgumentException(name + " length must be " + HISTORY_TICKS);
