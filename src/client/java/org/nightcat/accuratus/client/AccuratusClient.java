@@ -18,6 +18,12 @@ public class AccuratusClient implements ClientModInitializer {
                     literal("fixedtarget")
                             .executes(context -> {
                                 fixedTargetEnabled = !fixedTargetEnabled;
+                                if (fixedTargetEnabled && trackTargetEnabled) {
+                                    trackTargetEnabled = false;
+                                    context.getSource().sendFeedback(Text.literal(
+                                            "Prediction tracking mode disabled because fixed target aiming mode was enabled."
+                                    ));
+                                }
                                 context.getSource().sendFeedback(Text.literal(
                                         "Fixed target aiming mode " + (fixedTargetEnabled ? "enabled" : "disabled") + "."
                                 ));
@@ -29,6 +35,12 @@ public class AccuratusClient implements ClientModInitializer {
                     literal("tracktarget")
                             .executes(context -> {
                                 trackTargetEnabled = !trackTargetEnabled;
+                                if (trackTargetEnabled && fixedTargetEnabled) {
+                                    fixedTargetEnabled = false;
+                                    context.getSource().sendFeedback(Text.literal(
+                                            "Fixed target aiming mode disabled because prediction tracking mode was enabled."
+                                    ));
+                                }
                                 context.getSource().sendFeedback(Text.literal(
                                         "Prediction tracking mode " + (trackTargetEnabled ? "enabled" : "disabled") + "."
                                 ));
