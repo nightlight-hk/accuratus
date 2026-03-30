@@ -38,6 +38,9 @@ public abstract class MinecraftClientMixin {
     private static final int TRACK_PREDICTION_STEP_TICKS = 1;
 
     @Unique
+    private static final int TRACK_AIM_PRECALC_TICKS = 1;
+
+    @Unique
     private static final double TRACKING_RANGE = 256.0;
 
     @Shadow
@@ -384,6 +387,14 @@ public abstract class MinecraftClientMixin {
             player.sendMessage(Text.literal("Track target: 20 ticks collected, predicting trajectory."), false);
         }
 
+        if (delayedAimPending) {
+            delayedAimTicksRemaining--;
+            if (delayedAimTicksRemaining <= 0) {
+                applyAim(delayedAimYaw, delayedAimPitch);
+                delayedAimPending = false;
+            }
+        }
+
         predictionTickCounter++;
         if (predictionTickCounter < TRACK_PREDICTION_STEP_TICKS) {
             return;
@@ -398,11 +409,15 @@ public abstract class MinecraftClientMixin {
                 player.getX(),
                 startY,
                 player.getZ(),
-                getInitialArrowSpeed(player)
+                getInitialArrowSpeed(player),
+                TRACK_AIM_PRECALC_TICKS
         );
 
         if (solution.found) {
-            applyAim((float) solution.yaw, (float) solution.pitch);
+            delayedAimYaw = (float) solution.yaw;
+            delayedAimPitch = (float) solution.pitch;
+            delayedAimTicksRemaining = TRACK_AIM_PRECALC_TICKS;
+            delayedAimPending = true;
         }
     }
 

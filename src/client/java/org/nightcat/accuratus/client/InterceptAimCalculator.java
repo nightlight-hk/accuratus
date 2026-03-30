@@ -21,11 +21,36 @@ public final class InterceptAimCalculator {
             double startZ,
             double arrowSpeed
     ) {
+        return findEarliestAimSolution(
+                pastX,
+                pastY,
+                pastZ,
+                startX,
+                startY,
+                startZ,
+                arrowSpeed,
+                0
+        );
+    }
+
+    public static AimSolution findEarliestAimSolution(
+            double[] pastX,
+            double[] pastY,
+            double[] pastZ,
+            double startX,
+            double startY,
+            double startZ,
+            double arrowSpeed,
+            int launchDelayTicks
+    ) {
         validateHistory(pastX, "pastX");
         validateHistory(pastY, "pastY");
         validateHistory(pastZ, "pastZ");
         if (arrowSpeed <= 0.0) {
             throw new IllegalArgumentException("arrowSpeed must be > 0");
+        }
+        if (launchDelayTicks < 0 || launchDelayTicks > PREDICTION_TICKS) {
+            throw new IllegalArgumentException("launchDelayTicks must be in [0, " + PREDICTION_TICKS + "]");
         }
 
         long beginNs = System.nanoTime();
@@ -60,7 +85,7 @@ public final class InterceptAimCalculator {
                 continue;
             }
 
-            if (Math.abs(shotTick - futureTick) <= TICK_TOLERANCE) {
+            if (Math.abs((shotTick + launchDelayTicks) - futureTick) <= TICK_TOLERANCE) {
                 elapsedMs = (System.nanoTime() - beginNs) / 1_000_000.0;
                 return AimSolution.hit(
                         yawPitchTick[0],
@@ -89,6 +114,30 @@ public final class InterceptAimCalculator {
             double arrowSpeed,
             int futureTick
     ) {
+        return findAimSolutionAtFutureTick(
+                pastX,
+                pastY,
+                pastZ,
+                startX,
+                startY,
+                startZ,
+                arrowSpeed,
+                futureTick,
+                0
+        );
+    }
+
+    public static AimSolution findAimSolutionAtFutureTick(
+            double[] pastX,
+            double[] pastY,
+            double[] pastZ,
+            double startX,
+            double startY,
+            double startZ,
+            double arrowSpeed,
+            int futureTick,
+            int launchDelayTicks
+    ) {
         validateHistory(pastX, "pastX");
         validateHistory(pastY, "pastY");
         validateHistory(pastZ, "pastZ");
@@ -97,6 +146,9 @@ public final class InterceptAimCalculator {
         }
         if (futureTick < 1 || futureTick > PREDICTION_TICKS) {
             throw new IllegalArgumentException("futureTick must be in [1, " + PREDICTION_TICKS + "]");
+        }
+        if (launchDelayTicks < 0 || launchDelayTicks > PREDICTION_TICKS) {
+            throw new IllegalArgumentException("launchDelayTicks must be in [0, " + PREDICTION_TICKS + "]");
         }
 
         long beginNs = System.nanoTime();
@@ -115,6 +167,11 @@ public final class InterceptAimCalculator {
         double ty = predictedY[idx];
         double tz = predictedZ[idx];
 
+        int expectedFlightTick = futureTick - launchDelayTicks;
+        if (expectedFlightTick <= 0) {
+            return AimSolution.noHit(elapsedMs);
+        }
+
         double[] yawPitchTick = TrajectoryCalculator.findAnglesAndTicksWithin(
                 startX,
                 startY,
@@ -123,8 +180,8 @@ public final class InterceptAimCalculator {
                 ty,
                 tz,
                 arrowSpeed,
-                Math.max(1, futureTick - TICK_TOLERANCE),
-                futureTick + TICK_TOLERANCE
+                Math.max(1, expectedFlightTick - TICK_TOLERANCE),
+                expectedFlightTick + TICK_TOLERANCE
         );
 
         int shotTick = (int) Math.round(yawPitchTick[2]);
@@ -133,7 +190,7 @@ public final class InterceptAimCalculator {
             return AimSolution.timeout(elapsedMs);
         }
 
-        if (shotTick <= 0 || Math.abs(shotTick - futureTick) > TICK_TOLERANCE) {
+        if (shotTick <= 0 || Math.abs((shotTick + launchDelayTicks) - futureTick) > TICK_TOLERANCE) {
             return AimSolution.noHit(elapsedMs);
         }
 
