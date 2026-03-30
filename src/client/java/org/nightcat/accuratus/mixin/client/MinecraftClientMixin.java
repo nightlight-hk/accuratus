@@ -4,6 +4,7 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.client.option.GameOptions;
 import net.minecraft.entity.Entity;
+import net.minecraft.entity.boss.dragon.EnderDragonPart;
 import net.minecraft.entity.projectile.ProjectileUtil;
 import net.minecraft.util.Formatting;
 import net.minecraft.util.hit.BlockHitResult;
@@ -331,8 +332,14 @@ public abstract class MinecraftClientMixin {
 
     @Unique
     private void startTracking(Entity entity) {
+        Entity trackEntity = resolveTrackEntity(entity);
+        if (trackEntity == null) {
+            player.sendMessage(Text.literal("Track target: failed to resolve target."), false);
+            return;
+        }
+
         trackingActive = true;
-        trackedEntityId = entity.getId();
+        trackedEntityId = trackEntity.getId();
         trackedSampleCount = 0;
         trackedWriteIndex = 0;
         trackingReadyNotified = false;
@@ -340,10 +347,10 @@ public abstract class MinecraftClientMixin {
         delayedAimPending = false;
         delayedAimTicksRemaining = 0;
 
-        Vec3d pos = getEntityHeadPosition(entity);
+        Vec3d pos = getEntityHeadPosition(trackEntity);
         player.sendMessage(Text.literal(String.format(
                 "Track target: tracking %s at %s.",
-                entity.getName().getString(),
+                trackEntity.getName().getString(),
                 formatCoordinates(pos)
         )), false);
     }
@@ -364,11 +371,14 @@ public abstract class MinecraftClientMixin {
             return;
         }
 
-        Entity trackedEntity = player.getEntityWorld().getEntityById(trackedEntityId);
+        Entity trackedEntity = resolveTrackEntity(player.getEntityWorld().getEntityById(trackedEntityId));
         if (trackedEntity == null || !trackedEntity.isAlive()) {
             stopTracking("Track target: target is gone.");
             return;
         }
+
+        // If the resolved target differs (e.g. multipart hit -> owner), keep id synced.
+        trackedEntityId = trackedEntity.getId();
 
         if (player.squaredDistanceTo(trackedEntity) > TRACKING_RANGE * TRACKING_RANGE) {
             stopTracking("Track target: target out of range.");
@@ -468,6 +478,14 @@ public abstract class MinecraftClientMixin {
     @Unique
     private static Vec3d getEntityHeadPosition(Entity entity) {
         return new Vec3d(entity.getX(), entity.getEyeY(), entity.getZ());
+    }
+
+    @Unique
+    private static Entity resolveTrackEntity(Entity entity) {
+        if (entity instanceof EnderDragonPart dragonPart && dragonPart.owner != null) {
+            return dragonPart.owner;
+        }
+        return entity;
     }
 
     @Unique
