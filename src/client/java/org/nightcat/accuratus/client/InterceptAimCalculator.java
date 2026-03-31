@@ -70,7 +70,12 @@ public final class InterceptAimCalculator {
             double ty = predictedY[i];
             double tz = predictedZ[i];
 
-            double[] yawPitchTick = TrajectoryCalculator.findAnglesAndTicks(
+            int expectedFlightTick = futureTick - launchDelayTicks;
+            if (expectedFlightTick <= 0) {
+                continue;
+            }
+
+            double eta = FastETACalculator.estimateTimeOfArrival(
                     startX,
                     startY,
                     startZ,
@@ -79,25 +84,40 @@ public final class InterceptAimCalculator {
                     tz,
                     arrowSpeed
             );
+            if (eta < 0.0 || Math.abs(eta - expectedFlightTick) > TICK_TOLERANCE) {
+                continue;
+            }
+
+            int minTick = Math.max(1, expectedFlightTick - TICK_TOLERANCE);
+            int maxTick = expectedFlightTick + TICK_TOLERANCE;
+            double[] yawPitchTick = TrajectoryCalculator.findAnglesAndTicksWithin(
+                    startX,
+                    startY,
+                    startZ,
+                    tx,
+                    ty,
+                    tz,
+                    arrowSpeed,
+                    minTick,
+                    maxTick
+            );
 
             int shotTick = (int) Math.round(yawPitchTick[2]);
             if (shotTick <= 0) {
                 continue;
             }
 
-            if (Math.abs((shotTick + launchDelayTicks) - futureTick) <= TICK_TOLERANCE) {
-                elapsedMs = (System.nanoTime() - beginNs) / 1_000_000.0;
-                return AimSolution.hit(
-                        yawPitchTick[0],
-                        yawPitchTick[1],
-                        tx,
-                        ty,
-                        tz,
-                        futureTick,
-                        shotTick,
-                        elapsedMs
-                );
-            }
+            elapsedMs = (System.nanoTime() - beginNs) / 1_000_000.0;
+            return AimSolution.hit(
+                    yawPitchTick[0],
+                    yawPitchTick[1],
+                    tx,
+                    ty,
+                    tz,
+                    futureTick,
+                    shotTick,
+                    elapsedMs
+            );
         }
 
         double elapsedMs = (System.nanoTime() - beginNs) / 1_000_000.0;
@@ -169,6 +189,19 @@ public final class InterceptAimCalculator {
 
         int expectedFlightTick = futureTick - launchDelayTicks;
         if (expectedFlightTick <= 0) {
+            return AimSolution.noHit(elapsedMs);
+        }
+
+        double eta = FastETACalculator.estimateTimeOfArrival(
+                startX,
+                startY,
+                startZ,
+                tx,
+                ty,
+                tz,
+                arrowSpeed
+        );
+        if (eta < 0.0 || Math.abs(eta - expectedFlightTick) > TICK_TOLERANCE) {
             return AimSolution.noHit(elapsedMs);
         }
 
