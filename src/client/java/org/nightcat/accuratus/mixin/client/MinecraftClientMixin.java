@@ -39,9 +39,6 @@ public abstract class MinecraftClientMixin {
     private static final int TRACK_PREDICTION_STEP_TICKS = 1;
 
     @Unique
-    private static final int TRACK_AIM_PRECALC_TICKS = 1;
-
-    @Unique
     private static final double TRACKING_RANGE = 256.0;
 
     @Shadow
@@ -89,18 +86,6 @@ public abstract class MinecraftClientMixin {
 
     @Unique
     private int predictionTickCounter;
-
-    @Unique
-    private boolean delayedAimPending;
-
-    @Unique
-    private int delayedAimTicksRemaining;
-
-    @Unique
-    private float delayedAimYaw;
-
-    @Unique
-    private float delayedAimPitch;
 
     @Unique
     @Inject(method = "tick", at = @At("HEAD"))
@@ -344,8 +329,6 @@ public abstract class MinecraftClientMixin {
         trackedWriteIndex = 0;
         trackingReadyNotified = false;
         predictionTickCounter = 0;
-        delayedAimPending = false;
-        delayedAimTicksRemaining = 0;
 
         Vec3d pos = getEntityHeadPosition(trackEntity);
         player.sendMessage(Text.literal(String.format(
@@ -397,14 +380,6 @@ public abstract class MinecraftClientMixin {
             player.sendMessage(Text.literal("Track target: 20 ticks collected, predicting trajectory."), false);
         }
 
-        if (delayedAimPending) {
-            delayedAimTicksRemaining--;
-            if (delayedAimTicksRemaining <= 0) {
-                applyAim(delayedAimYaw, delayedAimPitch);
-                delayedAimPending = false;
-            }
-        }
-
         predictionTickCounter++;
         if (predictionTickCounter < TRACK_PREDICTION_STEP_TICKS) {
             return;
@@ -419,15 +394,11 @@ public abstract class MinecraftClientMixin {
                 player.getX(),
                 startY,
                 player.getZ(),
-                getInitialArrowSpeed(player),
-                TRACK_AIM_PRECALC_TICKS
+                getInitialArrowSpeed(player)
         );
 
         if (solution.found) {
-            delayedAimYaw = (float) solution.yaw;
-            delayedAimPitch = (float) solution.pitch;
-            delayedAimTicksRemaining = TRACK_AIM_PRECALC_TICKS;
-            delayedAimPending = true;
+            applyAim((float) solution.yaw, (float) solution.pitch);
         }
     }
 
@@ -496,8 +467,6 @@ public abstract class MinecraftClientMixin {
         trackedWriteIndex = 0;
         trackingReadyNotified = false;
         predictionTickCounter = 0;
-        delayedAimPending = false;
-        delayedAimTicksRemaining = 0;
         if (player != null) {
             player.sendMessage(Text.literal(reason), false);
         }
