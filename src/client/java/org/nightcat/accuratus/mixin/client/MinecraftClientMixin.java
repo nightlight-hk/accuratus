@@ -4,6 +4,7 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.client.option.GameOptions;
 import net.minecraft.entity.Entity;
+import net.minecraft.entity.boss.dragon.EnderDragonEntity;
 import net.minecraft.entity.boss.dragon.EnderDragonPart;
 import net.minecraft.entity.projectile.ProjectileUtil;
 import net.minecraft.util.Formatting;
@@ -448,7 +449,29 @@ public abstract class MinecraftClientMixin {
 
     @Unique
     private static Vec3d getEntityHeadPosition(Entity entity) {
+        EnderDragonPart dragonHead = resolveDragonHeadPart(entity);
+        if (dragonHead != null) {
+            return new Vec3d(dragonHead.getX(), dragonHead.getY(), dragonHead.getZ());
+        }
         return new Vec3d(entity.getX(), entity.getEyeY(), entity.getZ());
+    }
+
+    @Unique
+    private static EnderDragonPart resolveDragonHeadPart(Entity entity) {
+        if (entity instanceof EnderDragonPart dragonPart) {
+            if (dragonPart.owner != null && dragonPart == dragonPart.owner.head) {
+                return dragonPart;
+            }
+            if (dragonPart.owner == null) {
+                return null;
+            }
+            return dragonPart.owner.head;
+        }
+
+        if (!(entity instanceof EnderDragonEntity dragon)) {
+            return null;
+        }
+        return dragon.head;
     }
 
     @Unique
